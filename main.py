@@ -1,4 +1,3 @@
-# 导入必要的模块和库
 import sys
 import json
 import random
@@ -8,7 +7,7 @@ from pathlib import Path
 from collections import defaultdict
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFileDialog,
-    QLabel, QLineEdit, QSlider, QProgressBar
+    QLabel, QLineEdit, QSlider, QProgressBar, QMessageBox
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 
@@ -144,6 +143,8 @@ def labelme_to_yolo(
 # 转换线程类
 class ConvertThread(QThread):
     progress = pyqtSignal(int)  # 进度信号
+    error = pyqtSignal(str)  # 错误信号
+    finished = pyqtSignal()  # 完成信号
 
     def __init__(self, input_folder, output_folder, split_rate):
         super().__init__()
@@ -152,10 +153,15 @@ class ConvertThread(QThread):
         self.split_rate = split_rate
 
     def run(self):
-        # 获取标签和JSON文件路径，创建yaml配置文件，进行转换
-        sorted_keys, json_file_paths = get_labels_and_json_path(self.input_folder)
-        create_yaml(self.output_folder, sorted_keys)
-        labelme_to_yolo(json_file_paths, self.output_folder, sorted_keys, self.split_rate, self.progress)
+        try:
+            # 获取标签和JSON文件路径，创建yaml配置文件，进行转换
+            sorted_keys, json_file_paths = get_labels_and_json_path(self.input_folder)
+            create_yaml(self.output_folder, sorted_keys)
+            labelme_to_yolo(json_file_paths, self.output_folder, sorted_keys, self.split_rate, self.progress)
+        except Exception as e:
+            self.error.emit(str(e))  # 发出错误信号
+        else:
+            self.finished.emit()  # 发出完成信号
 
 # 主应用程序窗口类
 class LabelMe2YoloApp(QWidget):
@@ -164,7 +170,7 @@ class LabelMe2YoloApp(QWidget):
         self.initUI()  # 初始化用户界面
 
     def initUI(self):
-        self.setWindowTitle("LabelMe 转 YOLO 转换器")
+        self.setWindowTitle("LabelMe 转 YOLO 转换器")  # 设置窗口标题
 
         self.input_folder_path = ""  # 输入文件夹路径
         self.output_folder_path = ""  # 输出文件夹路径
@@ -248,11 +254,21 @@ class LabelMe2YoloApp(QWidget):
         # 创建转换线程
         self.thread = ConvertThread(input_folder, output_folder, split_rate)
         self.thread.progress.connect(self.update_progress)
+        self.thread.error.connect(self.show_error_message)
+        self.thread.finished.connect(self.show_success_message)
         self.thread.start()
 
     # 更新进度条
     def update_progress(self, value):
         self.progress_bar.setValue(value)
+
+    # 显示错误信息弹窗
+    def show_error_message(self, message):
+        QMessageBox.critical(self, "错误", f"程序出错。\n请检查输入输出文件夹是否设置正确且输入文件夹内部文件是否合法且一一对应。\n错误详情: {message}")
+
+    # 显示成功信息弹窗
+    def show_success_message(self):
+        QMessageBox.information(self, "成功", "转换成功完成！")
 
 # 主程序入口
 if __name__ == "__main__":
